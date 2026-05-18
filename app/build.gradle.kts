@@ -39,7 +39,7 @@ android {
     }
     sourceSets {
         getByName("main") {
-            assets.setSrcDirs(listOf("temp", "../../DashboardFrontend/temp"))
+            assets.setSrcDirs(listOf("temp", "../../DashboardFrontend/temp/comblock"))
         }
     }
 }

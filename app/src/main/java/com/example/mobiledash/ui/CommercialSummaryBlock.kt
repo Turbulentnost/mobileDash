@@ -287,7 +287,7 @@ private fun commercialIconPath(tile: KpiTile, index: Int): String {
         "yellow" -> "yellow"
         else -> "green"
     }
-    return "comblock/$folder/$color.png"
+    return "$folder/$color.png"
 }
 
 private fun commercialIconFolder(tile: KpiTile, index: Int): String {
