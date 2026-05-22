@@ -10,11 +10,11 @@ import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
 
 enum class TempImageAsset(val fileName: String) {
-    Logo("logo.png"),
-    Tiles("plitka.png"),
-    Charts("graph.png"),
-    Tables("table.png"),
-    Info("info.png"),
+    Logo("icons/logo.png"),
+    Tiles("icons/plitka.png"),
+    Charts("icons/graph.png"),
+    Tables("icons/table.png"),
+    Info("icons/info.png"),
 }
 
 @Composable

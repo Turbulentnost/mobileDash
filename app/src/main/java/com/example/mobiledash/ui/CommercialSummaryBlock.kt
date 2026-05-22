@@ -282,12 +282,8 @@ private fun commercialValue(tile: KpiTile): String {
 
 private fun commercialIconPath(tile: KpiTile, index: Int): String {
     val folder = commercialIconFolder(tile, index)
-    val color = when (tile.rag.lowercase()) {
-        "red" -> "red"
-        "yellow" -> "yellow"
-        else -> "green"
-    }
-    return "$folder/$color.png"
+    val color = commercialRagColor(tile.rag)
+    return "comblock/$folder/$color.png"
 }
 
 private fun commercialIconFolder(tile: KpiTile, index: Int): String {
@@ -302,9 +298,18 @@ private fun commercialIconFolder(tile: KpiTile, index: Int): String {
 }
 
 private fun commercialIconBackground(rag: String): Color {
-    return when (rag.lowercase()) {
+    return when (commercialRagColor(rag)) {
         "red" -> Color(0xFFFFE4E9)
         "yellow" -> Color(0xFFFFF8D7)
         else -> Color(0xFFE0FBE5)
+    }
+}
+
+private fun commercialRagColor(rag: String): String {
+    return when (rag.trim().lowercase()) {
+        "red", "danger", "error", "bad" -> "red"
+        "yellow", "amber", "warning", "warn" -> "yellow"
+        "green", "success", "ok", "good" -> "green"
+        else -> "green"
     }
 }

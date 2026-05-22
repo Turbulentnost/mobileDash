@@ -38,11 +38,16 @@ data class ChartPoint(
     val label: String,
     val value: Double,
     val plan: Double? = null,
+    val color: String? = null,
+    val percentLabel: String = "",
 )
 
 data class ChartSeries(
     val name: String,
     val points: List<ChartPoint>,
+    val color: String? = null,
+    val valueRole: String = "",
+    val dashed: Boolean = false,
 )
 
 data class ChartBlock(
@@ -59,7 +64,9 @@ enum class ChartType {
 }
 
 data class TableBlock(
+    val key: String,
     val title: String,
+    val description: String = "",
     val headers: List<String>,
     val rows: List<List<String>>,
 )

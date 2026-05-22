@@ -39,7 +39,7 @@ android {
     }
     sourceSets {
         getByName("main") {
-            assets.setSrcDirs(listOf("temp", "../../DashboardFrontend/temp/comblock"))
+            assets.setSrcDirs(listOf("temp"))
         }
     }
 }
@@ -60,4 +60,12 @@ dependencies {
     androidTestImplementation(libs.androidx.junit)
     debugImplementation(libs.androidx.compose.ui.test.manifest)
     debugImplementation(libs.androidx.compose.ui.tooling)
+}
+
+tasks.matching { task ->
+    task.name.startsWith("compress") && task.name.endsWith("Assets")
+}.configureEach {
+    doFirst {
+        delete(layout.buildDirectory.dir("intermediates/compressed_assets"))
+    }
 }
