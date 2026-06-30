@@ -6,10 +6,14 @@ class DashboardRepository(
 ) {
     suspend fun restoreSession(): LoginSession? = sessionStore.readSession()
 
-    suspend fun login(nickname: String, password: String): ApiResult<LoginSession> {
+    suspend fun login(nickname: String, password: String, rememberSession: Boolean): ApiResult<LoginSession> {
         return when (val result = api.login(nickname, password)) {
             is ApiResult.Success -> {
-                sessionStore.saveSession(result.value)
+                if (rememberSession) {
+                    sessionStore.saveSession(result.value)
+                } else {
+                    sessionStore.clear()
+                }
                 result
             }
             is ApiResult.Failure -> result

@@ -82,6 +82,8 @@ fun DashboardScreen(
 
     fun reload() {
         loading = true
+        payload = null
+        commercialPayload = null
         if (isChairmanUser && chairmanFor != "commerce") commercialLoading = true
         error = ""
         scope.launch {
@@ -209,14 +211,13 @@ fun DashboardScreen(
                             onAggregationChange = { aggregation = it },
                         )
                     }
-                    if (loading) {
-                        item { CircularProgressIndicator() }
-                    }
                     if (error.isNotBlank()) {
                         item { Text(error, color = MaterialTheme.colorScheme.error) }
                     }
                     val currentPayload = payload
-                    if (currentPayload != null) {
+                    if (loading && currentPayload == null) {
+                        item { DashboardLoadingState() }
+                    } else if (currentPayload != null) {
                         if (selectedSection == DashboardSection.Tiles && isChairmanUser && chairmanFor != "commerce") {
                             item {
                                 CommercialSummaryBlock(
@@ -249,6 +250,28 @@ fun DashboardScreen(
                 isAdmin = session.user.isAdmin,
                 onSelect = { selectedSection = it },
                 modifier = Modifier.align(Alignment.BottomCenter),
+            )
+        }
+    }
+}
+
+@Composable
+private fun DashboardLoadingState() {
+    Surface(
+        modifier = Modifier.fillMaxWidth(),
+        color = DashboardDesign.Card,
+        shape = androidx.compose.foundation.shape.RoundedCornerShape(DashboardDesign.CardRadius),
+    ) {
+        Column(
+            modifier = Modifier.padding(vertical = 42.dp, horizontal = 18.dp),
+            horizontalAlignment = Alignment.CenterHorizontally,
+            verticalArrangement = Arrangement.spacedBy(12.dp),
+        ) {
+            CircularProgressIndicator(color = DashboardDesign.Accent)
+            Text(
+                "Загрузка данных...",
+                color = DashboardDesign.MutedText,
+                style = MaterialTheme.typography.bodyMedium,
             )
         }
     }

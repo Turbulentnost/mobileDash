@@ -28,10 +28,15 @@ data class KpiTile(
     val period: String,
     val fact: String,
     val plan: String,
+    val expected: String,
     val kpiPercent: String,
     val units: String,
     val rag: String,
     val hasData: Boolean,
+    val goal: String = "",
+    val formula: String = "",
+    val source: String = "",
+    val description: String = "",
 )
 
 data class ChartPoint(

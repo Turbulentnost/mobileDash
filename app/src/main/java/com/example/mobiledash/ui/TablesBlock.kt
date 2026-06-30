@@ -2,6 +2,7 @@ package com.example.mobiledash.ui
 
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -23,6 +24,7 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
+import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.font.FontWeight
@@ -89,6 +91,7 @@ private fun TablesHeader(query: String, onQueryChange: (String) -> Unit) {
 
 @Composable
 private fun TableCard(table: TableBlock) {
+    var expanded by remember(table.key, table.title) { mutableStateOf(true) }
     Card(
         modifier = Modifier
             .fillMaxWidth()
@@ -98,7 +101,13 @@ private fun TableCard(table: TableBlock) {
         shape = RoundedCornerShape(DashboardDesign.CardRadius),
     ) {
         Column(modifier = Modifier.padding(14.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
-            Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .clickable { expanded = !expanded },
+                horizontalArrangement = Arrangement.spacedBy(12.dp),
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
                 Box(
                     modifier = Modifier
                         .background(DashboardDesign.SoftAccent, RoundedCornerShape(8.dp))
@@ -114,25 +123,39 @@ private fun TableCard(table: TableBlock) {
                         style = MaterialTheme.typography.labelSmall,
                     )
                 }
+                Surface(
+                    color = if (expanded) DashboardDesign.Navy else DashboardDesign.SoftAccent,
+                    shape = RoundedCornerShape(10.dp),
+                ) {
+                    Text(
+                        if (expanded) "Свернуть" else "Раскрыть",
+                        modifier = Modifier.padding(horizontal = 10.dp, vertical = 6.dp),
+                        color = if (expanded) Color.White else DashboardDesign.Navy,
+                        style = MaterialTheme.typography.labelSmall,
+                        fontWeight = FontWeight.SemiBold,
+                    )
+                }
             }
-            if (table.description.isNotBlank()) {
-                Text(
-                    table.description,
-                    color = DashboardDesign.MutedText,
-                    style = MaterialTheme.typography.bodySmall,
-                )
-            }
-            HeaderChips(headers = table.headers)
-            HorizontalDivider(color = DashboardDesign.Border)
-            table.rows.take(20).forEachIndexed { index, row ->
-                TableDataRow(index = index + 1, headers = table.headers, row = row)
-            }
-            if (table.rows.size > 20) {
-                Text(
-                    "Еще ${table.rows.size - 20} строк",
-                    color = DashboardDesign.Accent,
-                    style = MaterialTheme.typography.labelSmall,
-                )
+            if (expanded) {
+                if (table.description.isNotBlank()) {
+                    Text(
+                        table.description,
+                        color = DashboardDesign.MutedText,
+                        style = MaterialTheme.typography.bodySmall,
+                    )
+                }
+                HeaderChips(headers = table.headers)
+                HorizontalDivider(color = DashboardDesign.Border)
+                table.rows.take(20).forEachIndexed { index, row ->
+                    TableDataRow(index = index + 1, headers = table.headers, row = row)
+                }
+                if (table.rows.size > 20) {
+                    Text(
+                        "Еще ${table.rows.size - 20} строк",
+                        color = DashboardDesign.Accent,
+                        style = MaterialTheme.typography.labelSmall,
+                    )
+                }
             }
         }
     }

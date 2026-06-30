@@ -14,7 +14,6 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.lazy.LazyColumn
-import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.KeyboardOptions
@@ -24,12 +23,14 @@ import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
+import androidx.compose.material3.Checkbox
 import androidx.compose.material3.CircularProgressIndicator
+import androidx.compose.material3.DropdownMenu
+import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.OutlinedTextFieldDefaults
-import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
@@ -44,8 +45,9 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.KeyboardCapitalization
 import androidx.compose.ui.text.input.PasswordVisualTransformation
+import androidx.compose.ui.unit.DpOffset
 import androidx.compose.ui.unit.dp
-import com.example.mobiledash.AppConfig
+import androidx.compose.ui.window.PopupProperties
 import com.example.mobiledash.data.ApiResult
 import com.example.mobiledash.data.DashboardRepository
 import com.example.mobiledash.data.LoginCandidate
@@ -68,6 +70,8 @@ fun LoginScreen(
     var message by remember { mutableStateOf("") }
     var showRegistration by remember { mutableStateOf(false) }
     var showReset by remember { mutableStateOf(false) }
+    var showLoginSuggestions by remember { mutableStateOf(false) }
+    var rememberSession by remember { mutableStateOf(true) }
 
     LaunchedEffect(Unit) {
         when (val result = repository.fetchLoginCandidates()) {
@@ -117,22 +121,35 @@ fun LoginScreen(
                 ) {
                     Text("Войти в систему", style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Bold, color = DashboardDesign.Text)
                     Text("Выберите пользователя из подсказок или введите логин вручную", color = DashboardDesign.MutedText)
-                    OutlinedTextField(
-                        value = nickname,
-                        onValueChange = { nickname = it },
-                        label = { Text("Пользователь") },
-                        singleLine = true,
-                        modifier = Modifier.fillMaxWidth(),
-                        keyboardOptions = KeyboardOptions(capitalization = KeyboardCapitalization.None),
-                        colors = loginFieldColors(),
-                    )
-                    if (loginSuggestions.isNotEmpty()) {
-                        Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                    Box(modifier = Modifier.fillMaxWidth()) {
+                        OutlinedTextField(
+                            value = nickname,
+                            onValueChange = {
+                                nickname = it
+                                showLoginSuggestions = it.isNotBlank()
+                            },
+                            label = { Text("Пользователь") },
+                            singleLine = true,
+                            modifier = Modifier.fillMaxWidth(),
+                            keyboardOptions = KeyboardOptions(capitalization = KeyboardCapitalization.None),
+                            colors = loginFieldColors(),
+                        )
+                        DropdownMenu(
+                            expanded = showLoginSuggestions && loginSuggestions.isNotEmpty(),
+                            onDismissRequest = { showLoginSuggestions = false },
+                            offset = DpOffset(x = 0.dp, y = 4.dp),
+                            modifier = Modifier.fillMaxWidth(0.92f),
+                            properties = PopupProperties(focusable = false),
+                        ) {
                             loginSuggestions.forEach { candidate ->
-                                LoginSuggestionRow(candidate) {
-                                    nickname = candidate.nickname
-                                    department = candidate.department
-                                }
+                                DropdownMenuItem(
+                                    text = { LoginSuggestionContent(candidate) },
+                                    onClick = {
+                                        nickname = candidate.nickname
+                                        department = candidate.department
+                                        showLoginSuggestions = false
+                                    },
+                                )
                             }
                         }
                     }
@@ -145,6 +162,25 @@ fun LoginScreen(
                         visualTransformation = PasswordVisualTransformation(),
                         colors = loginFieldColors(),
                     )
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .clickable { rememberSession = !rememberSession },
+                        horizontalArrangement = Arrangement.spacedBy(8.dp),
+                    ) {
+                        Checkbox(
+                            checked = rememberSession,
+                            onCheckedChange = { rememberSession = it },
+                        )
+                        Column {
+                            Text("Запомнить сеанс", color = DashboardDesign.Text, fontWeight = FontWeight.SemiBold)
+                            Text(
+                                "В следующий раз вход откроется без ввода пароля",
+                                color = DashboardDesign.MutedText,
+                                style = MaterialTheme.typography.labelSmall,
+                            )
+                        }
+                    }
                     Button(
                         modifier = Modifier.fillMaxWidth(),
                         enabled = !loading && nickname.isNotBlank() && password.isNotBlank(),
@@ -159,7 +195,7 @@ fun LoginScreen(
                             loading = true
                             message = ""
                             scope.launch {
-                                when (val result = repository.login(nickname.trim(), password)) {
+                                when (val result = repository.login(nickname.trim(), password, rememberSession)) {
                                     is ApiResult.Success -> onLoggedIn(result.value)
                                     is ApiResult.Failure -> message = result.message
                                 }
@@ -226,17 +262,6 @@ fun LoginScreen(
                 )
             }
         }
-        if (candidates.isNotEmpty()) {
-            item {
-                Text("Пользователи", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold, color = DashboardDesign.Text)
-            }
-            items(candidates.take(8)) { candidate ->
-                CandidateRow(candidate) {
-                    nickname = candidate.nickname
-                    department = candidate.department
-                }
-            }
-        }
     }
 }
 
@@ -260,56 +285,24 @@ private fun LoginHeader() {
                 }
             }
             Text("Единый вход в дашборд KPI", color = Color.White.copy(alpha = 0.86f))
-            Surface(color = Color.White.copy(alpha = 0.12f), shape = RoundedCornerShape(12.dp)) {
-                Text(
-                    AppConfig.API_BASE_URL,
-                    modifier = Modifier.padding(horizontal = 12.dp, vertical = 8.dp),
-                    color = Color.White,
-                    style = MaterialTheme.typography.labelLarge,
-                )
-            }
+            Text("Мобильный доступ к корпоративным показателям", color = Color.White.copy(alpha = 0.72f))
         }
     }
 }
 
 @Composable
-private fun LoginSuggestionRow(candidate: LoginCandidate, onSelect: () -> Unit) {
-    Surface(
-        modifier = Modifier
-            .fillMaxWidth()
-            .clickable(onClick = onSelect),
-        color = DashboardDesign.SoftAccent,
-        shape = RoundedCornerShape(14.dp),
-    ) {
-        Row(modifier = Modifier.padding(12.dp), horizontalArrangement = Arrangement.spacedBy(10.dp)) {
-            Box(
-                modifier = Modifier
-                    .background(DashboardDesign.Accent, RoundedCornerShape(9.dp))
-                    .padding(horizontal = 9.dp, vertical = 6.dp),
-            ) {
-                Text(candidate.nickname.take(1).uppercase(), color = Color.White, fontWeight = FontWeight.Bold)
-            }
-            Column {
-                Text(candidate.nickname, color = DashboardDesign.Text, fontWeight = FontWeight.SemiBold)
-                Text(candidate.department, color = DashboardDesign.MutedText, style = MaterialTheme.typography.labelMedium)
-            }
+private fun LoginSuggestionContent(candidate: LoginCandidate) {
+    Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+        Box(
+            modifier = Modifier
+                .background(DashboardDesign.Accent, RoundedCornerShape(9.dp))
+                .padding(horizontal = 9.dp, vertical = 6.dp),
+        ) {
+            Text(candidate.nickname.take(1).uppercase(), color = Color.White, fontWeight = FontWeight.Bold)
         }
-    }
-}
-
-@Composable
-private fun CandidateRow(candidate: LoginCandidate, onSelect: () -> Unit) {
-    Card(
-        modifier = Modifier
-            .fillMaxWidth()
-            .clickable(onClick = onSelect),
-        shape = RoundedCornerShape(16.dp),
-        colors = CardDefaults.cardColors(containerColor = DashboardDesign.Card),
-        elevation = CardDefaults.cardElevation(defaultElevation = 1.dp),
-    ) {
-        Column(modifier = Modifier.padding(14.dp)) {
-            Text(candidate.nickname, style = MaterialTheme.typography.titleSmall, color = DashboardDesign.Text, fontWeight = FontWeight.SemiBold)
-            Text(candidate.department, color = DashboardDesign.MutedText)
+        Column {
+            Text(candidate.nickname, color = DashboardDesign.Text, fontWeight = FontWeight.SemiBold)
+            Text(candidate.department, color = DashboardDesign.MutedText, style = MaterialTheme.typography.labelMedium)
         }
     }
 }

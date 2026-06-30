@@ -83,29 +83,68 @@ private fun parseTiles(node: JSONObject?): List<KpiTile> {
             period = item.stringOrEmpty("period", "pf_period", "month_name", "Период"),
             fact = formatMetric(item.opt("display_fact") ?: item.opt("fact") ?: item.opt("Факт")),
             plan = formatMetric(item.opt("display_plan") ?: item.opt("plan") ?: item.opt("План")),
+            expected = formatMetric(
+                item.opt("display_expected_plan")
+                    ?: item.opt("expected_plan")
+                    ?: item.opt("expected")
+                    ?: item.opt("forecast")
+                    ?: item.opt("Ожидаемое"),
+            ),
             kpiPercent = formatMetric(item.opt("kpi_pct") ?: item.opt("kpi_percent") ?: item.opt("KPI")),
             units = item.stringOrEmpty("units", "unit", "Ед. изм."),
             rag = item.stringOrEmpty("rag", "status", "color").lowercase(Locale.ROOT),
             hasData = !item.has("has_data") || item.optBoolean("has_data", true),
+            goal = item.stringOrEmpty("goal", "Цель"),
+            formula = normalizeFormulaText(item.stringOrEmpty("formula", "Формула")),
+            source = item.stringOrEmpty("source", "Источник"),
+            description = item.stringOrEmpty("description", "Описание"),
         )
     }
+}
+
+private fun normalizeFormulaText(raw: String): String {
+    if (raw.isBlank()) return ""
+    var text = raw.trim()
+    text = Regex("""\\(?:mathrm|text)\{([^{}]*)\}""").replace(text) { match ->
+        match.groupValues.getOrNull(1).orEmpty()
+    }
+    text = Regex("""\\dfrac\{([^{}]*)\}\{([^{}]*)\}""").replace(text) { match ->
+        "${match.groupValues[1]} / ${match.groupValues[2]}"
+    }
+    text = text
+        .replace("\\times", "×")
+        .replace("\\cdot", "×")
+        .replace("\\%", "%")
+        .replace(Regex("""\\[a-zA-Z]+"""), "")
+        .replace("{", "")
+        .replace("}", "")
+    return text
+        .replace(Regex("""\s+"""), " ")
+        .replace(" / ", " / ")
+        .trim()
 }
 
 private fun parseCharts(node: JSONObject?, tiles: List<KpiTile>): List<ChartBlock> {
     val lineSeries = mutableListOf<ChartSeries>()
     val barPoints = mutableListOf<ChartPoint>()
+    var apiDonutChart: ChartBlock? = null
     if (node != null) {
         node.keyList().forEach { key ->
             val chart = node.optJSONObject(key) ?: return@forEach
             when (classifyChartType(chart.stringOrEmpty("chart_type", "chartType").ifBlank { key })) {
                 ChartType.Line -> lineSeries += lineSeriesFromFrontendChart(key, chart)
                 ChartType.Bar -> barPoints += barPointsFromFrontendChart(key, chart)
-                ChartType.Donut -> Unit
+                ChartType.Donut -> {
+                    val parsed = donutChartFromApi(key, chart)
+                    if (parsed != null && (apiDonutChart == null || key.equals("KS-RAZVITIE", ignoreCase = true))) {
+                        apiDonutChart = parsed
+                    }
+                }
             }
         }
     }
 
-    val donutPoints = tiles.map { tile ->
+    val tileDonutPoints = tiles.map { tile ->
         val percent = tile.kpiPercent.percentNumberOrNull()
         ChartPoint(
             label = tile.title.ifBlank { tile.badge },
@@ -128,12 +167,94 @@ private fun parseCharts(node: JSONObject?, tiles: List<KpiTile>): List<ChartBloc
                 points = barPoints.take(12),
             ))
         }
-        add(ChartBlock(
+        add(apiDonutChart ?: ChartBlock(
             title = "Круговые диаграммы",
             type = ChartType.Donut,
-            points = donutPoints,
+            points = tileDonutPoints,
         ))
     }
+}
+
+private fun donutChartFromApi(key: String, chart: JSONObject): ChartBlock? {
+    if (key.equals("KS-RAZVITIE", ignoreCase = true)) {
+        val charts = chart.arrayOrNull("charts")?.objects().orEmpty()
+        val period = chart.objectOrNull("period")
+        val refMonth = period?.optInt("month", 0)?.takeIf { it in 1..12 }
+            ?: chart.optInt("month", 0).takeIf { it in 1..12 }
+            ?: 1
+        val points = charts.mapNotNull { item -> ksRazvitieDonutPoint(item, refMonth) }
+        if (points.isEmpty()) return null
+        val monthName = period?.stringOrEmpty("month_name").orEmpty().ifBlank { monthShort(refMonth).lowercase(Locale.ROOT) }
+        val year = period?.optInt("year", 0)?.takeIf { it > 0 } ?: chart.optInt("year", 0)
+        val suffix = listOf(monthName.replaceFirstChar { it.titlecase(Locale.forLanguageTag("ru-RU")) }, year.takeIf { it > 0 }?.toString().orEmpty())
+            .filter { it.isNotBlank() }
+            .joinToString(" ")
+        return ChartBlock(
+            title = "КС развитие" + if (suffix.isNotBlank()) " — $suffix" else "",
+            type = ChartType.Donut,
+            points = points,
+        )
+    }
+
+    if (!key.equals("KD-C2", ignoreCase = true)) return null
+
+    val pieData = chart.arrayOrNull("pie_data")?.objects().orEmpty()
+    if (pieData.isEmpty()) return null
+    val points = pieData.map { item ->
+        val pct = item.doubleOrNull("pct", "percent", "kpi_pct") ?: item.doubleOrNull("value") ?: 0.0
+        val value = item.doubleOrNull("value") ?: pct
+        val unit = item.stringOrEmpty("unit")
+        ChartPoint(
+            label = item.stringOrEmpty("name", "title", "label").ifBlank { key },
+            value = pct.coerceAtLeast(0.0),
+            color = item.stringOrEmpty("color", "rag").ifBlank { ragHigherBetter(pct) },
+            percentLabel = formatValueWithUnit(value, unit),
+        )
+    }
+    return ChartBlock(
+        title = chart.stringOrEmpty("name", "title").ifBlank { "Круговые диаграммы" },
+        type = ChartType.Donut,
+        points = points,
+    )
+}
+
+private fun ksRazvitieDonutPoint(item: JSONObject, refMonth: Int): ChartPoint? {
+    val months = item.arrayOrNull("months")?.objects().orEmpty()
+    val month = months.firstOrNull { it.optInt("month", -1) == refMonth } ?: return null
+    val plan = month.doubleOrNull("plan", "plan_full") ?: 0.0
+    val fact = month.doubleOrNull("fact") ?: 0.0
+    val unit = item.stringOrEmpty("unit").ifBlank { month.stringOrEmpty("unit") }
+    val pct = if (plan > 0.0) fact / plan * 100.0 else null
+    val label = buildString {
+        val dept = item.stringOrEmpty("dept_name")
+        val indicator = item.stringOrEmpty("indicator")
+        if (dept.isNotBlank()) append(dept)
+        if (dept.isNotBlank() && indicator.isNotBlank()) append(" — ")
+        if (indicator.isNotBlank()) append(indicator)
+        if (unit.isNotBlank()) append(" ($unit)")
+    }.ifBlank { item.stringOrEmpty("name", "title").ifBlank { "КС развитие" } }
+    return ChartPoint(
+        label = label,
+        value = (pct ?: 0.0).coerceAtLeast(0.0),
+        plan = plan,
+        color = if (pct == null) "unknown" else ragHigherBetter(pct),
+        percentLabel = if (unit == "%") {
+            pct?.let { formatValueWithUnit(it, "%") } ?: "—"
+        } else {
+            "${formatCompactNumber(fact)}/${formatValueWithUnit(plan, unit)}"
+        },
+    )
+}
+
+private fun ragHigherBetter(pct: Double): String = when {
+    pct >= 100.0 -> "green"
+    pct >= 90.0 -> "yellow"
+    else -> "red"
+}
+
+private fun formatValueWithUnit(value: Double, unit: String): String {
+    val formatted = formatCompactNumber(value)
+    return if (unit.isBlank()) formatted else "$formatted $unit"
 }
 
 private fun lineSeriesFromFrontendChart(key: String, chart: JSONObject): List<ChartSeries> {
@@ -358,6 +479,20 @@ private fun tableSpecFor(key: String): TableSpec? {
             "Объект расчетов" to field("object_name"),
             "Поставщик" to field("supplier"),
             "Сумма" to field("amount", formatter = TableValueFormatter.Money),
+        )
+        normalized == "DEPT-T-PROTOCOL-OVERDUE" -> tableSpec(
+            "Протокол" to field("Протокол"),
+            "№ пункта" to field("НомерПунктаПротокола"),
+            "Задача" to field("Задача"),
+            "Срок исполнения" to field("СрокИсполнения", formatter = TableValueFormatter.Date),
+            "Дата постановки" to field("ДатаПостановкиЗадачи", formatter = TableValueFormatter.Date),
+            "Ответственный" to field("Ответственный"),
+            "Автор" to field("Автор"),
+            "Руководитель протокола" to field("РуководительПротокола"),
+            "Тема совещания" to field("ТемаСовещания"),
+            "Выполнена" to field("Выполнена"),
+            "Подтверждена" to field("Подтверждена"),
+            "Примечание" to field("Примечание"),
         )
         normalized == "TD-T-M1-DEVIATIONS" || normalized == "TD-T-Q1-DEVIATIONS" -> technicalProjectTableSpec()
         normalized == "OD-T-Q1-DEVIATIONS" ||

@@ -6,6 +6,7 @@ import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -15,18 +16,22 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.shape.CircleShape
+import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
+import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.geometry.Offset
@@ -59,12 +64,16 @@ fun KpiTilesBlock(tiles: List<KpiTile>) {
 private fun KpiTileCard(tile: KpiTile) {
     val accent = ragColor(tile.rag)
     var flipped by remember(tile.id) { mutableStateOf(false) }
+    var showInfo by remember(tile.id) { mutableStateOf(false) }
     val rotation by animateFloatAsState(
         targetValue = if (flipped) 180f else 0f,
         animationSpec = tween(durationMillis = 420),
         label = "kpi-card-flip",
     )
     val showBack = rotation > 90f
+    if (showInfo) {
+        KpiTileInfoDialog(tile = tile, onDismiss = { showInfo = false })
+    }
     Card(
         modifier = Modifier
             .fillMaxWidth()
@@ -89,14 +98,14 @@ private fun KpiTileCard(tile: KpiTile) {
             if (showBack) {
                 KpiTileBack(tile = tile, accent = accent)
             } else {
-                KpiTileFront(tile = tile, accent = accent)
+                KpiTileFront(tile = tile, accent = accent, onInfoClick = { showInfo = true })
             }
         }
     }
 }
 
 @Composable
-private fun KpiTileFront(tile: KpiTile, accent: Color) {
+private fun KpiTileFront(tile: KpiTile, accent: Color, onInfoClick: () -> Unit) {
     Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
             Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
                 Column(modifier = Modifier.weight(1f)) {
@@ -105,16 +114,37 @@ private fun KpiTileFront(tile: KpiTile, accent: Color) {
                         Text(tile.period, color = DashboardDesign.SecondaryText, style = MaterialTheme.typography.labelSmall)
                     }
                 }
-                Surface(
-                    color = DashboardDesign.SoftAccent,
-                    shape = RoundedCornerShape(8.dp),
+                Row(
+                    horizontalArrangement = Arrangement.spacedBy(8.dp),
+                    verticalAlignment = Alignment.CenterVertically,
                 ) {
-                    Text(
-                        tile.badge,
-                        modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp),
-                        color = DashboardDesign.Navy,
-                        style = MaterialTheme.typography.labelSmall,
-                    )
+                    Surface(
+                        color = DashboardDesign.SoftAccent,
+                        shape = CircleShape,
+                        modifier = Modifier
+                            .size(30.dp)
+                            .clickable { onInfoClick() },
+                    ) {
+                        Box(contentAlignment = Alignment.Center) {
+                            Text(
+                                "i",
+                                color = DashboardDesign.Navy,
+                                style = MaterialTheme.typography.labelMedium,
+                                fontWeight = FontWeight.Bold,
+                            )
+                        }
+                    }
+                    Surface(
+                        color = DashboardDesign.SoftAccent,
+                        shape = RoundedCornerShape(8.dp),
+                    ) {
+                        Text(
+                            tile.badge,
+                            modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp),
+                            color = DashboardDesign.Navy,
+                            style = MaterialTheme.typography.labelSmall,
+                        )
+                    }
                 }
             }
             Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
@@ -132,6 +162,9 @@ private fun KpiTileFront(tile: KpiTile, accent: Color) {
             Sparkline(tile.id + tile.fact, accent)
             Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
                 MetricMini("План", tile.plan)
+                if (tile.expected.isMeaningfulMetric()) {
+                    MetricMini("Ожидаемое", tile.expected)
+                }
                 MetricMini("KPI", tile.kpiPercent)
                 Box(
                     modifier = Modifier
@@ -141,6 +174,49 @@ private fun KpiTileFront(tile: KpiTile, accent: Color) {
                 )
             }
             if (!tile.hasData) Text("Данные были сгенерированы", color = MaterialTheme.colorScheme.error)
+    }
+}
+
+@Composable
+private fun KpiTileInfoDialog(tile: KpiTile, onDismiss: () -> Unit) {
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        confirmButton = {
+            TextButton(onClick = onDismiss) {
+                Text("Закрыть")
+            }
+        },
+        title = {
+            Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                Text(tile.title, color = DashboardDesign.Text, fontWeight = FontWeight.Bold)
+                Text(tile.badge, color = DashboardDesign.MutedText, style = MaterialTheme.typography.labelMedium)
+            }
+        },
+        text = {
+            Column(
+                modifier = Modifier.verticalScroll(rememberScrollState()),
+                verticalArrangement = Arrangement.spacedBy(10.dp),
+            ) {
+                DialogInfoRow("План", tile.plan)
+                DialogInfoRow("Факт", tile.fact)
+                if (tile.expected.isMeaningfulMetric()) DialogInfoRow("Ожидаемое", tile.expected)
+                DialogInfoRow("KPI", tile.kpiPercent)
+                if (tile.period.isNotBlank()) DialogInfoRow("Период", tile.period)
+                if (tile.goal.isNotBlank()) DialogInfoRow("Цель", tile.goal)
+                DialogInfoRow("Формула", tile.formula.ifBlank { "KPI = факт / план × 100%" })
+                if (tile.source.isNotBlank()) DialogInfoRow("Источник", tile.source)
+                if (tile.description.isNotBlank()) DialogInfoRow("Описание", tile.description)
+            }
+        },
+        containerColor = DashboardDesign.Card,
+    )
+}
+
+@Composable
+private fun DialogInfoRow(label: String, value: String) {
+    Column(verticalArrangement = Arrangement.spacedBy(2.dp)) {
+        Text(label, color = DashboardDesign.MutedText, style = MaterialTheme.typography.labelSmall)
+        Text(value.ifBlank { "—" }, color = DashboardDesign.Text, style = MaterialTheme.typography.bodyMedium)
     }
 }
 
@@ -161,15 +237,20 @@ private fun KpiTileBack(tile: KpiTile, accent: Color) {
                 )
             }
         }
-        DetailBlock("Формула расчета", "KPI = факт / план × 100%")
+        DetailBlock("Формула расчета", tile.formula.ifBlank { "KPI = факт / план × 100%" })
         Row(horizontalArrangement = Arrangement.spacedBy(10.dp), modifier = Modifier.fillMaxWidth()) {
             DetailBlock("Факт", tile.fact, modifier = Modifier.weight(1f))
             DetailBlock("План", tile.plan, modifier = Modifier.weight(1f))
         }
         Row(horizontalArrangement = Arrangement.spacedBy(10.dp), modifier = Modifier.fillMaxWidth()) {
             DetailBlock("KPI", tile.kpiPercent, modifier = Modifier.weight(1f))
-            DetailBlock("Период", tile.period.ifBlank { "—" }, modifier = Modifier.weight(1f))
+            DetailBlock(
+                "Ожидаемое",
+                if (tile.expected.isMeaningfulMetric()) tile.expected else "—",
+                modifier = Modifier.weight(1f),
+            )
         }
+        DetailBlock("Период", tile.period.ifBlank { "—" })
         DetailBlock("Единицы", tile.units.ifBlank { "—" })
         Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
             Text("Статус", color = DashboardDesign.MutedText)
@@ -213,6 +294,11 @@ private fun MetricMini(label: String, value: String) {
         Text(label, color = DashboardDesign.MutedText, style = MaterialTheme.typography.labelSmall)
         Text(value.ifBlank { "—" }, fontWeight = FontWeight.SemiBold, color = DashboardDesign.Text)
     }
+}
+
+private fun String.isMeaningfulMetric(): Boolean {
+    val normalized = trim()
+    return normalized.isNotBlank() && normalized != "—" && normalized.lowercase() != "null"
 }
 
 @Composable
