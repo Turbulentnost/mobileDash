@@ -11,9 +11,13 @@ import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.heightIn
+import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.KeyboardOptions
@@ -25,8 +29,6 @@ import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.Checkbox
 import androidx.compose.material3.CircularProgressIndicator
-import androidx.compose.material3.DropdownMenu
-import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextField
@@ -40,19 +42,25 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
+import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.shadow
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.layout.onGloballyPositioned
+import androidx.compose.ui.layout.positionInWindow
+import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.KeyboardCapitalization
 import androidx.compose.ui.text.input.PasswordVisualTransformation
-import androidx.compose.ui.unit.DpOffset
+import androidx.compose.ui.unit.IntOffset
 import androidx.compose.ui.unit.dp
-import androidx.compose.ui.window.PopupProperties
+import androidx.compose.ui.zIndex
 import com.example.mobiledash.data.ApiResult
 import com.example.mobiledash.data.DashboardRepository
 import com.example.mobiledash.data.LoginCandidate
 import com.example.mobiledash.data.LoginSession
 import kotlinx.coroutines.launch
+import kotlin.math.roundToInt
 
 @Composable
 fun LoginScreen(
@@ -72,6 +80,11 @@ fun LoginScreen(
     var showReset by remember { mutableStateOf(false) }
     var showLoginSuggestions by remember { mutableStateOf(false) }
     var rememberSession by remember { mutableStateOf(true) }
+    var loginFormLeftInWindowPx by remember { mutableStateOf(0f) }
+    var loginFormTopInWindowPx by remember { mutableStateOf(0f) }
+    var loginDropdownOffset by remember { mutableStateOf(IntOffset.Zero) }
+    var loginPopupWidthPx by remember { mutableStateOf(0) }
+    val density = LocalDensity.current
 
     LaunchedEffect(Unit) {
         when (val result = repository.fetchLoginCandidates()) {
@@ -109,19 +122,32 @@ fun LoginScreen(
             LoginHeader()
         }
         item {
-            Card(
-                colors = CardDefaults.cardColors(containerColor = DashboardDesign.Card),
-                elevation = CardDefaults.cardElevation(defaultElevation = 4.dp),
-                shape = RoundedCornerShape(24.dp),
-                modifier = Modifier.border(1.dp, DashboardDesign.Border, RoundedCornerShape(24.dp)),
+            Box(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .onGloballyPositioned { coordinates ->
+                        val position = coordinates.positionInWindow()
+                        loginFormLeftInWindowPx = position.x
+                        loginFormTopInWindowPx = position.y
+                    },
             ) {
+                Card(
+                    colors = CardDefaults.cardColors(containerColor = DashboardDesign.Card),
+                    elevation = CardDefaults.cardElevation(defaultElevation = 4.dp),
+                    shape = RoundedCornerShape(24.dp),
+                    modifier = Modifier.border(1.dp, DashboardDesign.Border, RoundedCornerShape(24.dp)),
+                ) {
                 Column(
                     modifier = Modifier.padding(18.dp),
                     verticalArrangement = Arrangement.spacedBy(14.dp),
                 ) {
                     Text("Войти в систему", style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Bold, color = DashboardDesign.Text)
                     Text("Выберите пользователя из подсказок или введите логин вручную", color = DashboardDesign.MutedText)
-                    Box(modifier = Modifier.fillMaxWidth()) {
+                    Box(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .zIndex(if (showLoginSuggestions && loginSuggestions.isNotEmpty()) 2f else 0f),
+                    ) {
                         OutlinedTextField(
                             value = nickname,
                             onValueChange = {
@@ -130,28 +156,20 @@ fun LoginScreen(
                             },
                             label = { Text("Пользователь") },
                             singleLine = true,
-                            modifier = Modifier.fillMaxWidth(),
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .onGloballyPositioned { coordinates ->
+                                    val gapPx = with(density) { 4.dp.roundToPx() }
+                                    val position = coordinates.positionInWindow()
+                                    loginDropdownOffset = IntOffset(
+                                        x = (position.x - loginFormLeftInWindowPx).roundToInt(),
+                                        y = (position.y - loginFormTopInWindowPx + coordinates.size.height + gapPx).roundToInt(),
+                                    )
+                                    loginPopupWidthPx = coordinates.size.width
+                                },
                             keyboardOptions = KeyboardOptions(capitalization = KeyboardCapitalization.None),
                             colors = loginFieldColors(),
                         )
-                        DropdownMenu(
-                            expanded = showLoginSuggestions && loginSuggestions.isNotEmpty(),
-                            onDismissRequest = { showLoginSuggestions = false },
-                            offset = DpOffset(x = 0.dp, y = 4.dp),
-                            modifier = Modifier.fillMaxWidth(0.92f),
-                            properties = PopupProperties(focusable = false),
-                        ) {
-                            loginSuggestions.forEach { candidate ->
-                                DropdownMenuItem(
-                                    text = { LoginSuggestionContent(candidate) },
-                                    onClick = {
-                                        nickname = candidate.nickname
-                                        department = candidate.department
-                                        showLoginSuggestions = false
-                                    },
-                                )
-                            }
-                        }
                     }
                     OutlinedTextField(
                         value = password,
@@ -207,6 +225,40 @@ fun LoginScreen(
                     }
                     if (message.isNotBlank()) {
                         Text(message, color = MaterialTheme.colorScheme.error)
+                    }
+                }
+                }
+                if (showLoginSuggestions && loginSuggestions.isNotEmpty()) {
+                    Card(
+                        modifier = Modifier
+                            .offset { loginDropdownOffset }
+                            .width(with(density) { loginPopupWidthPx.toDp() })
+                            .zIndex(8f)
+                            .shadow(10.dp, RoundedCornerShape(16.dp)),
+                        colors = CardDefaults.cardColors(containerColor = Color.White),
+                        shape = RoundedCornerShape(16.dp),
+                    ) {
+                        LazyColumn(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .heightIn(max = 260.dp),
+                            verticalArrangement = Arrangement.spacedBy(2.dp),
+                        ) {
+                            items(loginSuggestions) { candidate ->
+                                Row(
+                                    modifier = Modifier
+                                        .fillMaxWidth()
+                                        .clickable {
+                                            nickname = candidate.nickname
+                                            department = candidate.department
+                                            showLoginSuggestions = false
+                                        }
+                                        .padding(horizontal = 12.dp, vertical = 10.dp),
+                                ) {
+                                    LoginSuggestionContent(candidate)
+                                }
+                            }
+                        }
                     }
                 }
             }

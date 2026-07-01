@@ -16,10 +16,12 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -113,16 +115,19 @@ private fun LineChart(seriesList: List<ChartSeries>) {
                     if (drawableSeries.isEmpty()) return@detectTapGestures
                     val values = drawableSeries.flatMap { it.points.map(ChartPoint::value) }
                     val maxValue = max(values.maxOrNull() ?: 1.0, 1.0)
-                    val axisHeight = 30f
-                    val topPadding = 16f
-                    val plotHeight = (size.height - axisHeight - topPadding).coerceAtLeast(1f)
+                    val leftPadding = 58f
+                    val rightPadding = 18f
+                    val topPadding = 18f
+                    val bottomPadding = 46f
+                    val plotWidth = (size.width - leftPadding - rightPadding).coerceAtLeast(1f)
+                    val plotHeight = (size.height - bottomPadding - topPadding).coerceAtLeast(1f)
                     var nearest: LinePointSelection? = null
                     var nearestDistance = Float.MAX_VALUE
                     drawableSeries.forEachIndexed { seriesIndex, series ->
-                        val stepX = size.width.toFloat() / (series.points.size - 1)
+                        val stepX = plotWidth / (series.points.size - 1)
                         series.points.forEachIndexed { pointIndex, point ->
                             val mapped = Offset(
-                                x = stepX * pointIndex,
+                                x = leftPadding + stepX * pointIndex,
                                 y = topPadding + plotHeight - ((point.value / maxValue).toFloat() * plotHeight),
                             )
                             val distance = (tap.x - mapped.x).pow(2) + (tap.y - mapped.y).pow(2)
@@ -140,10 +145,15 @@ private fun LineChart(seriesList: List<ChartSeries>) {
         if (drawableSeries.isEmpty()) return@Canvas
         val values = drawableSeries.flatMap { it.points.map(ChartPoint::value) }
         val maxValue = max(values.maxOrNull() ?: 1.0, 1.0)
-        val axisHeight = 30f
-        val topPadding = 16f
-        val plotHeight = (size.height - axisHeight - topPadding).coerceAtLeast(1f)
+        val leftPadding = 58f
+        val rightPadding = 18f
+        val topPadding = 18f
+        val bottomPadding = 46f
+        val plotWidth = (size.width - leftPadding - rightPadding).coerceAtLeast(1f)
+        val plotHeight = (size.height - bottomPadding - topPadding).coerceAtLeast(1f)
         val axisY = topPadding + plotHeight
+        val axisLeft = leftPadding
+        val axisRight = leftPadding + plotWidth
         val colors = listOf(
             DashboardDesign.Accent,
             Color(0xFF16A34A),
@@ -153,12 +163,20 @@ private fun LineChart(seriesList: List<ChartSeries>) {
             Color(0xFF0891B2),
         )
         val lineGroups = drawableSeries.map(::lineSeriesBaseName).distinct()
+        drawLineGridAndAxes(
+            maxValue = maxValue,
+            left = axisLeft,
+            right = axisRight,
+            top = topPadding,
+            axisY = axisY,
+            points = drawableSeries.first().points,
+        )
         drawableSeries.forEachIndexed { seriesIndex, series ->
-            val stepX = size.width / (series.points.size - 1)
+            val stepX = plotWidth / (series.points.size - 1)
             val color = lineSeriesColor(series, lineGroups, colors)
             val mapped = series.points.mapIndexed { index, point ->
                 Offset(
-                    x = stepX * index,
+                    x = axisLeft + stepX * index,
                     y = topPadding + plotHeight - ((point.value / maxValue).toFloat() * plotHeight),
                 )
             }
@@ -176,14 +194,12 @@ private fun LineChart(seriesList: List<ChartSeries>) {
                 }
             }
         }
-        drawLine(Color(0xFFCBD5E1), Offset(0f, axisY), Offset(size.width, axisY), strokeWidth = 2f)
-        drawTimeAxisLabels(drawableSeries.first().points, axisY)
         selectedPoint?.let { selection ->
             val series = drawableSeries.getOrNull(selection.seriesIndex) ?: return@let
             val point = series.points.getOrNull(selection.pointIndex) ?: return@let
-            val stepX = size.width / (series.points.size - 1)
+            val stepX = plotWidth / (series.points.size - 1)
             val pointOffset = Offset(
-                x = stepX * selection.pointIndex,
+                x = axisLeft + stepX * selection.pointIndex,
                 y = topPadding + plotHeight - ((point.value / maxValue).toFloat() * plotHeight),
             )
             val color = lineSeriesColor(series, lineGroups, colors)
@@ -194,7 +210,7 @@ private fun LineChart(seriesList: List<ChartSeries>) {
             val factValue = factSeries?.points?.getOrNull(selection.pointIndex)?.value
             drawCircle(color, radius = 8f, center = pointOffset)
             drawLine(Color(0xFF94A3B8), Offset(pointOffset.x, topPadding), Offset(pointOffset.x, axisY), strokeWidth = 1.5f)
-            drawLine(Color(0xFF94A3B8), Offset(0f, pointOffset.y), Offset(size.width, pointOffset.y), strokeWidth = 1.5f)
+            drawLine(Color(0xFF94A3B8), Offset(axisLeft, pointOffset.y), Offset(axisRight, pointOffset.y), strokeWidth = 1.5f)
             drawLineTooltip(
                 monthLabel = point.label,
                 groupName = groupName,
@@ -258,12 +274,16 @@ private fun DonutGrid(points: List<ChartPoint>) {
 
 @Composable
 private fun DonutCell(point: ChartPoint, modifier: Modifier = Modifier) {
+    var showDetails by remember(point) { mutableStateOf(false) }
     val hasPercent = point.percentLabel != "—"
     val fill = if (hasPercent) chartPointColor(point.color) else DashboardDesign.MutedText
     Column(
         modifier = modifier
             .clip(RoundedCornerShape(16.dp))
             .background(DashboardDesign.Screen)
+            .pointerInput(point) {
+                detectTapGestures { showDetails = true }
+            }
             .padding(10.dp),
         horizontalAlignment = Alignment.CenterHorizontally,
         verticalArrangement = Arrangement.spacedBy(8.dp),
@@ -285,11 +305,70 @@ private fun DonutCell(point: ChartPoint, modifier: Modifier = Modifier) {
             fontWeight = FontWeight.SemiBold,
         )
     }
+    if (showDetails) {
+        DonutDetailsDialog(
+            point = point,
+            color = fill,
+            hasPercent = hasPercent,
+            onDismiss = { showDetails = false },
+        )
+    }
 }
 
 @Composable
-private fun SingleDonutChart(percent: Double, color: Color, hasPercent: Boolean) {
-    Canvas(modifier = Modifier.size(96.dp)) {
+private fun DonutDetailsDialog(
+    point: ChartPoint,
+    color: Color,
+    hasPercent: Boolean,
+    onDismiss: () -> Unit,
+) {
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        confirmButton = {
+            TextButton(onClick = onDismiss) { Text("Закрыть") }
+        },
+        title = {
+            Text(point.label, color = DashboardDesign.Text, fontWeight = FontWeight.Bold)
+        },
+        text = {
+            Column(
+                horizontalAlignment = Alignment.CenterHorizontally,
+                verticalArrangement = Arrangement.spacedBy(12.dp),
+                modifier = Modifier.fillMaxWidth(),
+            ) {
+                Box(contentAlignment = Alignment.Center, modifier = Modifier.size(168.dp)) {
+                    SingleDonutChart(
+                        percent = point.value,
+                        color = color,
+                        hasPercent = hasPercent,
+                        modifier = Modifier.size(168.dp),
+                    )
+                    Text(
+                        point.percentLabel.ifBlank { "${formatCompactNumber(point.value)}%" },
+                        color = color,
+                        style = MaterialTheme.typography.titleMedium,
+                        fontWeight = FontWeight.Bold,
+                    )
+                }
+                if (point.detailLabel.isNotBlank()) {
+                    Text(point.detailLabel, color = DashboardDesign.Text, fontWeight = FontWeight.SemiBold)
+                }
+                if (point.detailValue.isNotBlank()) {
+                    Text(point.detailValue, color = DashboardDesign.MutedText)
+                }
+            }
+        },
+    )
+}
+
+@Composable
+private fun SingleDonutChart(
+    percent: Double,
+    color: Color,
+    hasPercent: Boolean,
+    modifier: Modifier = Modifier.size(96.dp),
+) {
+    Canvas(modifier = modifier) {
         val stroke = size.minDimension * 0.14f
         val side = size.minDimension - stroke
         val topLeft = Offset(stroke / 2f, stroke / 2f)
@@ -342,28 +421,51 @@ private data class LinePointSelection(
     val pointIndex: Int,
 )
 
-private fun androidx.compose.ui.graphics.drawscope.DrawScope.drawTimeAxisLabels(
-    points: List<ChartPoint>,
+private fun androidx.compose.ui.graphics.drawscope.DrawScope.drawLineGridAndAxes(
+    maxValue: Double,
+    left: Float,
+    right: Float,
+    top: Float,
     axisY: Float,
+    points: List<ChartPoint>,
 ) {
-    if (points.isEmpty()) return
-    val paint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
+    val gridColor = Color(0xFFE5EAF2)
+    val axisColor = Color(0xFFCBD5E1)
+    val labelPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
         color = DashboardDesign.MutedText.toArgb()
-        textSize = 24f
+        textSize = 19f
         textAlign = Paint.Align.CENTER
         typeface = Typeface.create(Typeface.DEFAULT, Typeface.NORMAL)
     }
-    val maxLabels = 6
+    val yLabelPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
+        color = DashboardDesign.MutedText.toArgb()
+        textSize = 20f
+        textAlign = Paint.Align.RIGHT
+        typeface = Typeface.create(Typeface.DEFAULT, Typeface.NORMAL)
+    }
+    val plotHeight = (axisY - top).coerceAtLeast(1f)
+    val yTicks = 4
+    for (tick in 0..yTicks) {
+        val ratio = tick.toFloat() / yTicks
+        val y = axisY - plotHeight * ratio
+        drawLine(gridColor, Offset(left, y), Offset(right, y), strokeWidth = 1.2f)
+        val value = maxValue * ratio
+        drawIntoCanvas { canvas ->
+            canvas.nativeCanvas.drawText(formatCompactNumber(value), left - 8f, y + 7f, yLabelPaint)
+        }
+    }
+    drawLine(axisColor, Offset(left, top), Offset(left, axisY), strokeWidth = 2f)
+    drawLine(axisColor, Offset(left, axisY), Offset(right, axisY), strokeWidth = 2f)
+    if (points.isEmpty()) return
     val step = (points.size - 1).coerceAtLeast(1)
     drawIntoCanvas { canvas ->
         points.forEachIndexed { index, point ->
-            val shouldDraw = points.size <= maxLabels ||
-                index == 0 ||
-                index == points.lastIndex ||
-                index % ((points.size + maxLabels - 1) / maxLabels) == 0
-            if (!shouldDraw) return@forEachIndexed
-            val x = size.width * index / step
-            canvas.nativeCanvas.drawText(point.label, x, axisY + 24f, paint)
+            val x = left + (right - left) * index / step
+            drawLine(gridColor.copy(alpha = 0.65f), Offset(x, top), Offset(x, axisY), strokeWidth = 1f)
+            canvas.nativeCanvas.save()
+            canvas.nativeCanvas.rotate(-35f, x, axisY + 26f)
+            canvas.nativeCanvas.drawText(point.label, x, axisY + 26f, labelPaint)
+            canvas.nativeCanvas.restore()
         }
     }
 }

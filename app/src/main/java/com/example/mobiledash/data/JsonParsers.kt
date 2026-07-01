@@ -98,6 +98,7 @@ private fun parseTiles(node: JSONObject?): List<KpiTile> {
             formula = normalizeFormulaText(item.stringOrEmpty("formula", "Формула")),
             source = item.stringOrEmpty("source", "Источник"),
             description = item.stringOrEmpty("description", "Описание"),
+            cacheRefreshStatus = item.stringOrEmpty("cache_refresh_status"),
         )
     }
 }
@@ -151,15 +152,22 @@ private fun parseCharts(node: JSONObject?, tiles: List<KpiTile>): List<ChartBloc
             value = percent?.coerceAtLeast(0.0) ?: 0.0,
             color = tile.rag,
             percentLabel = if (percent == null) "—" else tile.kpiPercent,
+            detailValue = listOf(
+                "Факт: ${tile.fact}",
+                "План: ${tile.plan}",
+            ).joinToString("\n"),
         )
     }
     return buildList {
-        add(ChartBlock(
-            title = "Линейный график",
-            type = ChartType.Line,
-            points = lineSeries.firstOrNull()?.points.orEmpty(),
-            series = lineSeries.take(8),
-        ))
+        val visibleLineSeries = lineSeries.filter { it.points.isNotEmpty() }.take(8)
+        if (visibleLineSeries.isNotEmpty()) {
+            add(ChartBlock(
+                title = "Линейный график",
+                type = ChartType.Line,
+                points = visibleLineSeries.firstOrNull()?.points.orEmpty(),
+                series = visibleLineSeries,
+            ))
+        }
         if (barPoints.isNotEmpty()) {
             add(ChartBlock(
                 title = "Столбчатый график",
@@ -204,11 +212,20 @@ private fun donutChartFromApi(key: String, chart: JSONObject): ChartBlock? {
         val pct = item.doubleOrNull("pct", "percent", "kpi_pct") ?: item.doubleOrNull("value") ?: 0.0
         val value = item.doubleOrNull("value") ?: pct
         val unit = item.stringOrEmpty("unit")
+        val name = item.stringOrEmpty("name", "dept_name", "department")
+        val label = item.stringOrEmpty("indicator", "chart_title", "title", "label")
+            .ifBlank { chart.stringOrEmpty("name", "title").ifBlank { key } }
         ChartPoint(
-            label = item.stringOrEmpty("name", "title", "label").ifBlank { key },
+            label = label,
             value = pct.coerceAtLeast(0.0),
             color = item.stringOrEmpty("color", "rag").ifBlank { ragHigherBetter(pct) },
             percentLabel = formatValueWithUnit(value, unit),
+            detailLabel = name,
+            detailValue = listOfNotNull(
+                name.takeIf { it.isNotBlank() }?.let { "Отдел: $it" },
+                "Значение: ${formatValueWithUnit(value, unit)}",
+                "KPI: ${formatValueWithUnit(pct, "%")}",
+            ).joinToString("\n"),
         )
     }
     return ChartBlock(
@@ -225,11 +242,9 @@ private fun ksRazvitieDonutPoint(item: JSONObject, refMonth: Int): ChartPoint? {
     val fact = month.doubleOrNull("fact") ?: 0.0
     val unit = item.stringOrEmpty("unit").ifBlank { month.stringOrEmpty("unit") }
     val pct = if (plan > 0.0) fact / plan * 100.0 else null
+    val dept = item.stringOrEmpty("dept_name")
+    val indicator = item.stringOrEmpty("indicator")
     val label = buildString {
-        val dept = item.stringOrEmpty("dept_name")
-        val indicator = item.stringOrEmpty("indicator")
-        if (dept.isNotBlank()) append(dept)
-        if (dept.isNotBlank() && indicator.isNotBlank()) append(" — ")
         if (indicator.isNotBlank()) append(indicator)
         if (unit.isNotBlank()) append(" ($unit)")
     }.ifBlank { item.stringOrEmpty("name", "title").ifBlank { "КС развитие" } }
@@ -243,6 +258,14 @@ private fun ksRazvitieDonutPoint(item: JSONObject, refMonth: Int): ChartPoint? {
         } else {
             "${formatCompactNumber(fact)}/${formatValueWithUnit(plan, unit)}"
         },
+        detailLabel = dept,
+        detailValue = listOfNotNull(
+            dept.takeIf { it.isNotBlank() }?.let { "Отдел: $it" },
+            indicator.takeIf { it.isNotBlank() }?.let { "Показатель: $it" },
+            "Факт: ${formatValueWithUnit(fact, unit)}",
+            "План: ${formatValueWithUnit(plan, unit)}",
+            pct?.let { "KPI: ${formatValueWithUnit(it, "%")}" },
+        ).joinToString("\n"),
     )
 }
 
@@ -377,12 +400,12 @@ private fun tableFromTopLevel(key: String, value: Any?): TableBlock? {
         else -> null
     } ?: return null
     val rows = rowsArray.objects()
-    if (rows.isEmpty()) return null
 
     val spec = tableSpecFor(key)
     val headers = spec?.headers
         ?: tableObject?.arrayOrNull("columns")?.strings()?.takeIf { it.isNotEmpty() }
         ?: rows.flatMap { it.keyList() }.distinct().take(12)
+    if (headers.isEmpty()) return null
     val rowValues = rows.take(200).map { row ->
         if (spec != null) {
             spec.fields.map { field -> formatTableField(row, field) }
@@ -396,6 +419,7 @@ private fun tableFromTopLevel(key: String, value: Any?): TableBlock? {
         description = tableObject?.stringOrEmpty("description").orEmpty(),
         headers = headers,
         rows = rowValues,
+        cacheRefreshStatus = tableObject?.stringOrEmpty("cache_refresh_status").orEmpty(),
     )
 }
 
@@ -631,8 +655,9 @@ internal fun formatCompactNumber(value: Double): String = formatNumber(value)
 private fun formatNumber(value: Double): String {
     val absolute = abs(value)
     return when {
-        absolute >= 1_000_000_000.0 -> "${formatScaled(value / 1_000_000_000.0)} млрд."
-        absolute >= 1_000_000.0 -> "${formatScaled(value / 1_000_000.0)} млн."
+        absolute >= 1_000_000_000.0 -> "${formatScaled(value / 1_000_000_000.0)} млрд"
+        absolute >= 1_000_000.0 -> "${formatScaled(value / 1_000_000.0)} млн"
+        absolute >= 1_000.0 -> "${formatScaled(value / 1_000.0)} тыс"
         value % 1.0 == 0.0 -> value.roundToLong().toString()
         else -> String.format(Locale.forLanguageTag("ru-RU"), "%.2f", value)
     }

@@ -161,7 +161,9 @@ private fun KpiTileFront(tile: KpiTile, accent: Color, onInfoClick: () -> Unit) 
             }
             Sparkline(tile.id + tile.fact, accent)
             Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
-                MetricMini("План", tile.plan)
+                if (tile.shouldShowPlan()) {
+                    MetricMini("План", tile.plan)
+                }
                 if (tile.expected.isMeaningfulMetric()) {
                     MetricMini("Ожидаемое", tile.expected)
                 }
@@ -197,7 +199,7 @@ private fun KpiTileInfoDialog(tile: KpiTile, onDismiss: () -> Unit) {
                 modifier = Modifier.verticalScroll(rememberScrollState()),
                 verticalArrangement = Arrangement.spacedBy(10.dp),
             ) {
-                DialogInfoRow("План", tile.plan)
+                if (tile.shouldShowPlan()) DialogInfoRow("План", tile.plan)
                 DialogInfoRow("Факт", tile.fact)
                 if (tile.expected.isMeaningfulMetric()) DialogInfoRow("Ожидаемое", tile.expected)
                 DialogInfoRow("KPI", tile.kpiPercent)
@@ -240,7 +242,9 @@ private fun KpiTileBack(tile: KpiTile, accent: Color) {
         DetailBlock("Формула расчета", tile.formula.ifBlank { "KPI = факт / план × 100%" })
         Row(horizontalArrangement = Arrangement.spacedBy(10.dp), modifier = Modifier.fillMaxWidth()) {
             DetailBlock("Факт", tile.fact, modifier = Modifier.weight(1f))
-            DetailBlock("План", tile.plan, modifier = Modifier.weight(1f))
+            if (tile.shouldShowPlan()) {
+                DetailBlock("План", tile.plan, modifier = Modifier.weight(1f))
+            }
         }
         Row(horizontalArrangement = Arrangement.spacedBy(10.dp), modifier = Modifier.fillMaxWidth()) {
             DetailBlock("KPI", tile.kpiPercent, modifier = Modifier.weight(1f))
@@ -299,6 +303,13 @@ private fun MetricMini(label: String, value: String) {
 private fun String.isMeaningfulMetric(): Boolean {
     val normalized = trim()
     return normalized.isNotBlank() && normalized != "—" && normalized.lowercase() != "null"
+}
+
+private fun KpiTile.shouldShowPlan(): Boolean {
+    val identity = "${id} ${badge} ${title}".lowercase()
+    val isDebtorDebt = identity.contains("kd-m4") ||
+        (identity.contains("дебитор") && !identity.contains("просроч"))
+    return !isDebtorDebt
 }
 
 @Composable

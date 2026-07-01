@@ -16,6 +16,7 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import com.example.mobiledash.data.DashboardApi
+import com.example.mobiledash.data.DashboardCacheStore
 import com.example.mobiledash.data.DashboardRepository
 import com.example.mobiledash.data.LoginSession
 import com.example.mobiledash.data.SessionStore
@@ -27,6 +28,7 @@ fun MobileDashApp(context: Context) {
         DashboardRepository(
             api = DashboardApi(),
             sessionStore = SessionStore(context.applicationContext),
+            dashboardCacheStore = DashboardCacheStore(context.applicationContext),
         )
     }
     val scope = rememberCoroutineScope()

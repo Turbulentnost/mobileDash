@@ -3,6 +3,7 @@ package com.example.mobiledash.data
 class DashboardRepository(
     private val api: DashboardApi,
     private val sessionStore: SessionStore,
+    private val dashboardCacheStore: DashboardCacheStore,
 ) {
     suspend fun restoreSession(): LoginSession? = sessionStore.readSession()
 
@@ -46,7 +47,26 @@ class DashboardRepository(
     ): ApiResult<DashboardPayload> {
         val result = api.fetchDashboard(session.token, department, month, year, aggregation, chairmanFor)
         if (result is ApiResult.Failure && result.unauthorized) sessionStore.clear()
+        if (result is ApiResult.Success) {
+            dashboardCacheStore.saveDashboard(
+                dashboardCacheKey(session.user.nickname, department, month, year, aggregation, chairmanFor),
+                result.value,
+            )
+        }
         return result
+    }
+
+    suspend fun readCachedDashboard(
+        session: LoginSession,
+        department: String?,
+        month: Int,
+        year: Int,
+        aggregation: String,
+        chairmanFor: String? = null,
+    ): DashboardPayload? {
+        return dashboardCacheStore.readDashboard(
+            dashboardCacheKey(session.user.nickname, department, month, year, aggregation, chairmanFor),
+        )
     }
 
     suspend fun fetchImmediateSubordinates(session: LoginSession, department: String?): ApiResult<List<HierarchyNode>> {

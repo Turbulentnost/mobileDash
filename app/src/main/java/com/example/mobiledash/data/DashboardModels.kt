@@ -37,6 +37,7 @@ data class KpiTile(
     val formula: String = "",
     val source: String = "",
     val description: String = "",
+    val cacheRefreshStatus: String = "",
 )
 
 data class ChartPoint(
@@ -45,6 +46,8 @@ data class ChartPoint(
     val plan: Double? = null,
     val color: String? = null,
     val percentLabel: String = "",
+    val detailLabel: String = "",
+    val detailValue: String = "",
 )
 
 data class ChartSeries(
@@ -74,6 +77,7 @@ data class TableBlock(
     val description: String = "",
     val headers: List<String>,
     val rows: List<List<String>>,
+    val cacheRefreshStatus: String = "",
 )
 
 data class HierarchyNode(
