@@ -36,23 +36,36 @@ import kotlin.math.min
 fun TablesBlock(tables: List<TableBlock>) {
     var query by remember(tables) { mutableStateOf("") }
     var commercialTableMode by remember(tables) { mutableStateOf("claims") }
-    val visibleTables = remember(tables, commercialTableMode) {
-        tables.visibleForCommercialMode(commercialTableMode)
-    }
+    val isCommercialTables = tables.hasCommercialDirectorTables()
     Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
         TablesHeader(query = query, onQueryChange = { query = it })
         if (tables.isEmpty()) {
             Text("Таблицы отсутствуют в ответе API", color = DashboardDesign.MutedText)
             return
         }
-        if (tables.hasClaimsAndLawsuits()) {
-            ClaimsLawsuitsSwitch(
-                selected = commercialTableMode,
-                onSelect = { commercialTableMode = it },
-            )
-        }
-        visibleTables.forEach { table ->
-            TableCard(table = table, globalQuery = query)
+        if (isCommercialTables) {
+            val claimsOrLawsuits = tables.firstOrNull {
+                it.key.equals(if (commercialTableMode == "claims") "KD-T-CLAIMS" else "KD-T-LAWSUITS", ignoreCase = true)
+            }
+            if (claimsOrLawsuits != null) {
+                TableCard(
+                    table = claimsOrLawsuits,
+                    globalQuery = query,
+                    modeSwitch = {
+                        ClaimsLawsuitsSwitch(
+                            selected = commercialTableMode,
+                            onSelect = { commercialTableMode = it },
+                        )
+                    },
+                )
+            }
+            tables.firstOrNull { it.key.equals("KD-T-OVERDUE", ignoreCase = true) }?.let { overdueTable ->
+                TableCard(table = overdueTable, globalQuery = query)
+            }
+        } else {
+            tables.forEach { table ->
+                TableCard(table = table, globalQuery = query)
+            }
         }
     }
 }
@@ -60,17 +73,7 @@ fun TablesBlock(tables: List<TableBlock>) {
 @Composable
 private fun TablesHeader(query: String, onQueryChange: (String) -> Unit) {
     Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
-        Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
-            Text("Таблицы", style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Bold, color = DashboardDesign.Text)
-            Surface(color = DashboardDesign.SoftAccent, shape = RoundedCornerShape(10.dp)) {
-                Text(
-                    "Как во фронте",
-                    modifier = Modifier.padding(horizontal = 10.dp, vertical = 6.dp),
-                    color = DashboardDesign.Navy,
-                    style = MaterialTheme.typography.labelMedium,
-                )
-            }
-        }
+        Text("Таблицы", style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Bold, color = DashboardDesign.Text)
         OutlinedTextField(
             value = query,
             onValueChange = onQueryChange,
@@ -123,7 +126,11 @@ private fun TableModeButton(label: String, selected: Boolean, onClick: () -> Uni
 }
 
 @Composable
-private fun TableCard(table: TableBlock, globalQuery: String) {
+private fun TableCard(
+    table: TableBlock,
+    globalQuery: String,
+    modeSwitch: (@Composable () -> Unit)? = null,
+) {
     var expanded by remember(table.key, table.title) { mutableStateOf(true) }
     var currentPage by remember(table.key, table.rows.size, globalQuery) { mutableStateOf(1) }
     var filtersExpanded by remember(table.key) { mutableStateOf(false) }
@@ -179,6 +186,7 @@ private fun TableCard(table: TableBlock, globalQuery: String) {
                 }
             }
             if (expanded) {
+                modeSwitch?.invoke()
                 if (table.description.isNotBlank()) {
                     Text(
                         table.description,
@@ -317,20 +325,10 @@ private const val ROWS_PER_TABLE_PAGE = 5
 
 private fun maxPageCount(rows: Int): Int = maxOf(1, ceil(rows / ROWS_PER_TABLE_PAGE.toDouble()).toInt())
 
-private fun List<TableBlock>.hasClaimsAndLawsuits(): Boolean {
+private fun List<TableBlock>.hasCommercialDirectorTables(): Boolean {
     return any { it.key.equals("KD-T-CLAIMS", ignoreCase = true) } &&
-        any { it.key.equals("KD-T-LAWSUITS", ignoreCase = true) }
-}
-
-private fun List<TableBlock>.visibleForCommercialMode(mode: String): List<TableBlock> {
-    if (!hasClaimsAndLawsuits()) return this
-    return filter { table ->
-        when {
-            table.key.equals("KD-T-CLAIMS", ignoreCase = true) -> mode == "claims"
-            table.key.equals("KD-T-LAWSUITS", ignoreCase = true) -> mode == "lawsuits"
-            else -> true
-        }
-    }
+        any { it.key.equals("KD-T-LAWSUITS", ignoreCase = true) } &&
+        any { it.key.equals("KD-T-OVERDUE", ignoreCase = true) }
 }
 
 private fun List<List<String>>.filterByQueryAndFields(
@@ -363,13 +361,39 @@ private fun TableDataRow(index: Int, headers: List<String>, row: List<String>) {
     ) {
         Column(modifier = Modifier.padding(10.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
             val primary = row.firstOrNull { it.isNotBlank() && it != "—" } ?: "Строка таблицы"
-            Text("$index. $primary", color = DashboardDesign.Text, fontWeight = FontWeight.SemiBold, maxLines = 2)
+            Text("$index. $primary", color = DashboardDesign.Text, fontWeight = FontWeight.Bold)
             headers.zip(row).drop(1).forEach { (header, value) ->
-                Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
-                    Text(header, color = DashboardDesign.MutedText, style = MaterialTheme.typography.labelSmall, modifier = Modifier.widthIn(max = 150.dp))
-                    Text(value, color = DashboardDesign.Text, style = MaterialTheme.typography.labelSmall, maxLines = 2)
+                val isAmount = header.isAmountField()
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.spacedBy(10.dp),
+                    verticalAlignment = Alignment.Top,
+                ) {
+                    Text(
+                        header,
+                        color = DashboardDesign.MutedText,
+                        style = MaterialTheme.typography.labelSmall,
+                        modifier = Modifier
+                            .weight(0.42f)
+                            .widthIn(max = 150.dp),
+                    )
+                    Text(
+                        value,
+                        color = if (isAmount) DashboardDesign.Text else DashboardDesign.Text,
+                        style = MaterialTheme.typography.labelSmall,
+                        fontWeight = if (isAmount) FontWeight.Bold else FontWeight.Normal,
+                        modifier = Modifier.weight(0.58f),
+                    )
                 }
             }
         }
     }
+}
+
+private fun String.isAmountField(): Boolean {
+    val normalized = lowercase()
+    return "сумм" in normalized ||
+        "руб" in normalized ||
+        "amount" in normalized ||
+        "требован" in normalized
 }

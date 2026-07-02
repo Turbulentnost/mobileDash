@@ -13,7 +13,7 @@ import java.net.URLEncoder
 import java.net.URL
 
 class DashboardApi(
-    private val baseUrl: String = AppConfig.API_BASE_URL,
+    private val baseUrls: List<String> = AppConfig.API_BASE_URLS,
 ) {
     suspend fun login(nickname: String, password: String): ApiResult<LoginSession> {
         val body = JSONObject()
@@ -149,17 +149,44 @@ class DashboardApi(
         query: Map<String, String> = emptyMap(),
         body: JSONObject? = null,
     ): ApiResult<JSONObject> = withContext(Dispatchers.IO) {
-        val url = URL(buildUrl(path, query))
+        var lastNetworkError: String? = null
+        normalizedBaseUrls().forEachIndexed { index, baseUrl ->
+            val result = requestOnce(baseUrl, path, method, token, query, body)
+            when (result) {
+                is RequestAttempt.HttpResult -> return@withContext result.result
+                is RequestAttempt.NetworkFailure -> {
+                    lastNetworkError = result.message
+                    if (index == normalizedBaseUrls().lastIndex) {
+                        return@withContext ApiResult.Failure(lastNetworkError ?: "Ошибка сети")
+                    }
+                }
+            }
+        }
+        ApiResult.Failure(lastNetworkError ?: "Ошибка сети")
+    }
+
+    private fun requestOnce(
+        baseUrl: String,
+        path: String,
+        method: String,
+        token: String?,
+        query: Map<String, String>,
+        body: JSONObject?,
+    ): RequestAttempt {
+        val url = URL(buildUrl(baseUrl, path, query))
         val connection = (url.openConnection() as HttpURLConnection).apply {
             requestMethod = method
+            connectTimeout = 15_000
+            readTimeout = 30_000
             setRequestProperty("Accept", "application/json")
+            setRequestProperty("User-Agent", "MobileDash Android")
             if (!token.isNullOrBlank()) setRequestProperty("Authorization", AppConfig.AUTH_SCHEME + token)
             if (body != null) {
                 doOutput = true
                 setRequestProperty("Content-Type", "application/json; charset=utf-8")
             }
         }
-        try {
+        return try {
             if (body != null) {
                 OutputStreamWriter(connection.outputStream, Charsets.UTF_8).use { it.write(body.toString()) }
             }
@@ -169,22 +196,26 @@ class DashboardApi(
                 BufferedReader(InputStreamReader(input, Charsets.UTF_8)).use { it.readText() }
             }.orEmpty()
             val json = if (text.isBlank()) JSONObject() else JSONObject(text)
-            if (status in 200..299) {
-                ApiResult.Success(json)
-            } else {
-                ApiResult.Failure(
-                    message = json.stringOrEmpty("error", "message").ifBlank { "Ошибка запроса ($status)" },
-                    unauthorized = status == 401,
-                )
-            }
+            RequestAttempt.HttpResult(
+                if (status in 200..299) {
+                    ApiResult.Success(json)
+                } else {
+                    ApiResult.Failure(
+                        message = json.stringOrEmpty("error", "message").ifBlank { "Ошибка запроса ($status)" },
+                        unauthorized = status == 401,
+                    )
+                },
+            )
         } catch (error: Exception) {
-            ApiResult.Failure(error.message ?: "Ошибка сети")
+            RequestAttempt.NetworkFailure(
+                "Не удалось подключиться к серверу ${baseUrl.trimEnd('/')}: ${error.message ?: "ошибка сети"}",
+            )
         } finally {
             connection.disconnect()
         }
     }
 
-    private fun buildUrl(path: String, query: Map<String, String>): String {
+    private fun buildUrl(baseUrl: String, path: String, query: Map<String, String>): String {
         val normalizedBase = baseUrl.trimEnd('/')
         val normalizedPath = if (path.startsWith("/")) path else "/$path"
         if (query.isEmpty()) return normalizedBase + normalizedPath
@@ -193,6 +224,13 @@ class DashboardApi(
         }
         return "$normalizedBase$normalizedPath?$queryString"
     }
+
+    private fun normalizedBaseUrls(): List<String> = baseUrls.distinct().filter { it.isNotBlank() }
+}
+
+private sealed interface RequestAttempt {
+    data class HttpResult(val result: ApiResult<JSONObject>) : RequestAttempt
+    data class NetworkFailure(val message: String) : RequestAttempt
 }
 
 private fun String.urlEncode(): String = URLEncoder.encode(this, "UTF-8")

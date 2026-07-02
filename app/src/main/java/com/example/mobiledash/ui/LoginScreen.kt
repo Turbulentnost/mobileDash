@@ -111,17 +111,20 @@ fun LoginScreen(
         }
     }
 
-    LazyColumn(
+    Box(
         modifier = Modifier
             .fillMaxSize()
-            .background(DashboardDesign.Screen)
-            .padding(20.dp),
-        verticalArrangement = Arrangement.spacedBy(14.dp),
+            .background(DashboardDesign.Screen),
     ) {
-        item {
-            LoginHeader()
-        }
-        item {
+        LoginHeroBackground()
+        LazyColumn(
+            modifier = Modifier
+                .fillMaxSize()
+                .padding(horizontal = 24.dp),
+            verticalArrangement = Arrangement.spacedBy(14.dp),
+        ) {
+            item { Spacer(Modifier.height(158.dp)) }
+            item {
             Box(
                 modifier = Modifier
                     .fillMaxWidth()
@@ -138,11 +141,11 @@ fun LoginScreen(
                     modifier = Modifier.border(1.dp, DashboardDesign.Border, RoundedCornerShape(24.dp)),
                 ) {
                 Column(
-                    modifier = Modifier.padding(18.dp),
-                    verticalArrangement = Arrangement.spacedBy(14.dp),
+                    modifier = Modifier.padding(22.dp),
+                    verticalArrangement = Arrangement.spacedBy(16.dp),
                 ) {
-                    Text("Войти в систему", style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Bold, color = DashboardDesign.Text)
-                    Text("Выберите пользователя из подсказок или введите логин вручную", color = DashboardDesign.MutedText)
+                    Text("Вход в систему", style = MaterialTheme.typography.headlineSmall, fontWeight = FontWeight.Bold, color = DashboardDesign.Text)
+                    Text("Введите логин и пароль", color = DashboardDesign.MutedText)
                     Box(
                         modifier = Modifier
                             .fillMaxWidth()
@@ -191,9 +194,9 @@ fun LoginScreen(
                             onCheckedChange = { rememberSession = it },
                         )
                         Column {
-                            Text("Запомнить сеанс", color = DashboardDesign.Text, fontWeight = FontWeight.SemiBold)
+                            Text("Запомнить вход", color = DashboardDesign.Text, fontWeight = FontWeight.SemiBold)
                             Text(
-                                "В следующий раз вход откроется без ввода пароля",
+                                "В следующий раз пароль вводить не потребуется",
                                 color = DashboardDesign.MutedText,
                                 style = MaterialTheme.typography.labelSmall,
                             )
@@ -224,7 +227,7 @@ fun LoginScreen(
                         if (loading) CircularProgressIndicator(color = Color.White) else Text("Войти", modifier = Modifier.padding(vertical = 6.dp))
                     }
                     if (message.isNotBlank()) {
-                        Text(message, color = MaterialTheme.colorScheme.error)
+                        LoginErrorCard(message)
                     }
                 }
                 }
@@ -263,14 +266,14 @@ fun LoginScreen(
                 }
             }
         }
-        item {
+            item {
             Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                 AssistChip(onClick = { showRegistration = !showRegistration }, label = { Text("Заявка на доступ") })
                 AssistChip(onClick = { showReset = !showReset }, label = { Text("Сброс пароля") })
             }
         }
-        if (showRegistration) {
-            item {
+            if (showRegistration) {
+                item {
                 AccessRequestCard(
                     title = "Регистрация",
                     nickname = nickname,
@@ -294,8 +297,8 @@ fun LoginScreen(
                 )
             }
         }
-        if (showReset) {
-            item {
+            if (showReset) {
+                item {
                 PasswordResetCard(
                     nickname = nickname,
                     onNicknameChange = { nickname = it },
@@ -314,30 +317,66 @@ fun LoginScreen(
                 )
             }
         }
+            item {
+                Text(
+                    "Проблемы со входом? Обратитесь в ИТ-службу",
+                    color = DashboardDesign.MutedText,
+                    style = MaterialTheme.typography.labelMedium,
+                    modifier = Modifier.padding(bottom = 20.dp),
+                )
+            }
+        }
     }
 }
 
 @Composable
-private fun LoginHeader() {
-    Card(
-        colors = CardDefaults.cardColors(containerColor = DashboardDesign.Navy),
-        shape = RoundedCornerShape(28.dp),
-        elevation = CardDefaults.cardElevation(defaultElevation = 0.dp),
+private fun LoginHeroBackground() {
+    Box(
+        modifier = Modifier
+            .fillMaxWidth()
+            .height(210.dp)
+            .background(DashboardDesign.Navy),
     ) {
-        Column(modifier = Modifier.padding(22.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
-            Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(start = 28.dp, end = 28.dp, top = 54.dp),
+            horizontalArrangement = Arrangement.spacedBy(16.dp),
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            Box(
+                modifier = Modifier
+                    .background(DashboardDesign.NavyDark, RoundedCornerShape(16.dp))
+                    .padding(10.dp),
+            ) {
                 TempImage(
                     asset = TempImageAsset.Logo,
                     contentDescription = "Логотип MobileDash",
-                    modifier = Modifier.size(58.dp),
+                    modifier = Modifier.size(54.dp),
                 )
-                Column {
-                    Text("MobileDash", style = MaterialTheme.typography.headlineMedium, color = Color.White, fontWeight = FontWeight.Bold)
-                    Text("KPI dashboard", color = Color.White.copy(alpha = 0.78f))
-                }
             }
-            Text("Единый вход в дашборд KPI", color = Color.White.copy(alpha = 0.86f))
-            Text("Мобильный доступ к корпоративным показателям", color = Color.White.copy(alpha = 0.72f))
+            Column {
+                Text("MobileDash", style = MaterialTheme.typography.headlineMedium, color = Color.White, fontWeight = FontWeight.Bold)
+                Text("KPI dashboard", color = Color.White.copy(alpha = 0.78f))
+            }
+        }
+    }
+}
+
+@Composable
+private fun LoginErrorCard(message: String) {
+    Card(
+        colors = CardDefaults.cardColors(containerColor = Color(0xFFFFF1F2)),
+        shape = RoundedCornerShape(14.dp),
+        modifier = Modifier.border(1.dp, Color(0xFFFECACA), RoundedCornerShape(14.dp)),
+    ) {
+        Column(modifier = Modifier.padding(14.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
+            Text("Сервер недоступен", color = DashboardDesign.Negative, fontWeight = FontWeight.Bold)
+            Text(
+                message,
+                color = DashboardDesign.MutedText,
+                style = MaterialTheme.typography.bodySmall,
+            )
         }
     }
 }
